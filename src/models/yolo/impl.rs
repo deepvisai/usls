@@ -592,27 +592,4 @@ impl YOLO {
         Ok(ys)
         // Ok(ys.into())
     }
-
-    fn fetch_names_from_onnx(engine: &Engine) -> Option<Vec<String>> {
-        // fetch class names from onnx metadata
-        // String format: `{0: 'person', 1: 'bicycle', 2: 'sports ball', ..., 27: "yellow_lady's_slipper"}`
-        Regex::new(r#"(['"])([-()\w '"]+)(['"])"#)
-            .ok()?
-            .captures_iter(&engine.try_fetch("names")?)
-            .filter_map(|caps| caps.get(2).map(|m| m.as_str().to_string()))
-            .collect::<Vec<_>>()
-            .into()
-    }
-
-    fn fetch_nk_from_onnx(engine: &Engine) -> Option<usize> {
-        Regex::new(r"(\d+), \d+")
-            .ok()?
-            .captures(&engine.try_fetch("kpt_shape")?)
-            .and_then(|caps| caps.get(1))
-            .and_then(|m| m.as_str().parse::<usize>().ok())
-    }
-
-    fn n2s(n: usize) -> Vec<String> {
-        (0..n).map(|x| format!("# {}", x)).collect::<Vec<String>>()
-    }
 }
