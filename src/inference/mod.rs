@@ -1,6 +1,7 @@
 #[cfg(any(feature = "ort-download-binaries", feature = "ort-load-dynamic"))]
 mod engine;
 mod hbb;
+mod heatmap;
 mod image;
 mod instance_meta;
 mod keypoint;
@@ -12,6 +13,7 @@ mod skeleton;
 mod x;
 mod xs;
 mod y;
+
 #[cfg(any(feature = "ort-download-binaries", feature = "ort-load-dynamic"))]
 #[allow(clippy::all)]
 pub(crate) mod onnx {
@@ -21,6 +23,7 @@ pub(crate) mod onnx {
 #[cfg(any(feature = "ort-download-binaries", feature = "ort-load-dynamic"))]
 pub use engine::*;
 pub use hbb::*;
+pub use heatmap::*;
 pub use image::*;
 pub use instance_meta::*;
 pub use keypoint::*;

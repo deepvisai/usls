@@ -1,4 +1,5 @@
 mod hbb;
+mod heatmap;
 mod keypoint;
 mod mask;
 mod obb;

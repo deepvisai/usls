@@ -121,6 +121,13 @@ impl Style {
             ..Self::polygon()
         }
     }
+
+    pub fn heatmap() -> Self {
+        Self {
+            text_visible: false,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Builder, Default, Clone, PartialEq, Copy)]

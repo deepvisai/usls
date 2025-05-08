@@ -13,6 +13,7 @@ pub struct Annotator {
     keypoint_style: Option<Style>,
     polygon_style: Option<Style>,
     mask_style: Option<Style>,
+    heatmap_style: Option<Style>,
     text_renderer: TextRenderer,
 }
 
@@ -26,6 +27,7 @@ impl Default for Annotator {
             keypoint_style: Some(Style::keypoint()),
             polygon_style: Some(Style::polygon()),
             mask_style: Some(Style::mask()),
+            heatmap_style: Some(Style::heatmap()),
         }
     }
 }
@@ -40,6 +42,7 @@ impl Annotator {
             keypoint_style: self.keypoint_style.as_ref(),
             polygon_style: self.polygon_style.as_ref(),
             mask_style: self.mask_style.as_ref(),
+            heatmap_style: self.heatmap_style.as_ref(),
         };
         let mut rgba8 = image.to_rgba8();
         drawable.draw(&ctx, &mut rgba8)?;
