@@ -178,6 +178,7 @@ impl X {
     }
 
     pub fn standardize(mut self, mean: &[f32], std: &[f32], dim: usize) -> Result<Self> {
+        println!("Standardize: mean: {:?}, std: {:?}", mean, std);
         Ops::standardize(&mut self.0, mean.into(), std.into(), dim)?;
         Ok(self)
     }

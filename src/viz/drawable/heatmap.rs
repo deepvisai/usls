@@ -39,7 +39,7 @@ impl Drawable for HeatMap {
             self.get_id(),
         );
 
-        let alpha = style.color_fill_alpha().unwrap_or(150);
+        let alpha = style.color_fill_alpha().unwrap_or(120);
         let (w, h) = canvas.dimensions();
         let (mw, mh) = self.map().dimensions();
 

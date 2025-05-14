@@ -2,7 +2,7 @@ use aksr::Builder;
 use anyhow::Result;
 use image::GrayImage;
 
-use crate::{InstanceMeta, Style};
+use crate::{InstanceMeta, Polygon, Style};
 
 /// Heatmap: Gray Image.
 #[derive(Builder, Default, Clone)]

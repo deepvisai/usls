@@ -11,9 +11,9 @@ use ndarray::Axis;
 #[derive(Debug)]
 pub struct GLASS {
     engine: Engine,
-    height: MinOptMax,
-    width: MinOptMax,
-    batch: MinOptMax,
+    height: usize,
+    width: usize,
+    batch: usize,
     ts: Ts,
     processor: Processor,
     spec: String,
@@ -79,6 +79,7 @@ impl GLASS {
     fn postprocess(&self, xs: Xs) -> Result<Vec<Y>> {
         let mut results = Vec::new();
         let output_tensor = &xs[0]; // shape: [B, H, W] or [B, 1, H, W]
+        println!("Postprocess input shape: {:?}", output_tensor.shape());
 
         debug!("Output tensor shape: {:?}", output_tensor.shape());
 
@@ -88,6 +89,10 @@ impl GLASS {
 
             let raw_map = batch_out.to_owned().mapv(|v| v.clamp(0.0, 1.0));
             let max_score = raw_map.iter().copied().fold(0.0, f32::max);
+
+            let sum: f32 = raw_map.iter().copied().sum();
+            let count = raw_map.len();
+            let mean_score = if count > 0 { sum / count as f32 } else { 0.0 };
 
             debug!("Max anomaly score: {:.4}", max_score);
 
@@ -106,19 +111,25 @@ impl GLASS {
                 }
             }
 
-            let heatmap = image::imageops::resize(&small, w as u32, h as u32, FilterType::Triangle);
+            let heatmap = image::imageops::resize(&small, 900, 900, FilterType::Triangle);
 
-            let heatmap = HeatMap::default()
-                .with_map(heatmap)
-                .with_name("anomaly")
-                .with_confidence(max_score);
+            let heatmap = HeatMap::default().with_map(heatmap).with_name("anomaly");
 
-            let prob = Prob::default()
-                .with_name("anomaly_score")
+            let peak_prob = Prob::default()
+                .with_name("peak_anomaly_score")
                 .with_id(0)
                 .with_confidence(max_score);
 
-            results.push(Y::default().with_heatmaps(&[heatmap]).with_probs(&[prob]));
+            let mean_prob = Prob::default()
+                .with_name("mean_anomaly_score")
+                .with_id(1)
+                .with_confidence(mean_score);
+
+            results.push(
+                Y::default()
+                    .with_heatmaps(&[heatmap])
+                    .with_probs(&[peak_prob, mean_prob]),
+            );
 
             debug!("Finished processing batch {}", i);
         }
