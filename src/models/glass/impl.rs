@@ -1,7 +1,5 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
-use crate::{
-    elapsed, Engine, HeatMap, Image, Mask, MinOptMax, Options, Prob, Processor, Ts, Xs, Y,
-};
+use crate::{elapsed_module, Engine, Image, Image, Mask, MinOptMax, Prob, Processor, Ts, Xs, Y};
 use anyhow::Result;
 use image::{imageops::FilterType, GrayImage, Luma};
 use log::debug;
@@ -14,44 +12,29 @@ pub struct GLASS {
     height: usize,
     width: usize,
     batch: usize,
-    ts: Ts,
     processor: Processor,
-    spec: String,
-}
-
-impl TryFrom<Options> for GLASS {
-    type Error = anyhow::Error;
-
-    fn try_from(options: Options) -> Result<Self, Self::Error> {
-        Self::new(options)
-    }
 }
 
 impl GLASS {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
 
-        let (batch, height, width, ts, spec) = (
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&288.into()).opt(),
             engine.try_width().unwrap_or(&288.into()).opt(),
-            engine.ts.clone(),
-            engine.spec().to_owned(),
         );
 
-        let processor = options
-            .to_processor()?
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
 
         Ok(Self {
             engine,
-            height: height.into(),
-            width: width.into(),
-            batch: batch.into(),
+            height,
+            width,
+            batch,
             processor,
-            ts,
-            spec,
         })
     }
 
@@ -65,15 +48,10 @@ impl GLASS {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
-
+        let ys = elapsed_module!("visual-preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("visual-inference", self.inference(ys)?);
+        let ys = elapsed_module!("visual-postprocess", self.postprocess(ys)?);
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 
     fn postprocess(&self, xs: Xs) -> Result<Vec<Y>> {
@@ -113,7 +91,7 @@ impl GLASS {
 
             let heatmap = image::imageops::resize(&small, 900, 900, FilterType::Triangle);
 
-            let heatmap = HeatMap::default().with_map(heatmap).with_name("anomaly");
+            let heatmap = Image::default().with_map(heatmap).with_name("anomaly");
 
             let peak_prob = Prob::default()
                 .with_name("peak_anomaly_score")
