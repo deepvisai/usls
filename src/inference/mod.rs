@@ -1,7 +1,6 @@
 #[cfg(any(feature = "ort-download-binaries", feature = "ort-load-dynamic"))]
 mod engine;
 mod hbb;
-mod heatmap;
 mod image;
 mod instance_meta;
 mod keypoint;

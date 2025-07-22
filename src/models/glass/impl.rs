@@ -1,5 +1,5 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
-use crate::{elapsed_module, Engine, Image, Image, Mask, MinOptMax, Prob, Processor, Ts, Xs, Y};
+use crate::{elapsed_module, Config, Engine, Image, Prob, Processor, Xs, Y};
 use anyhow::Result;
 use image::{imageops::FilterType, GrayImage, Luma};
 use log::debug;
@@ -48,9 +48,9 @@ impl GLASS {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed_module!("visual-preprocess", self.preprocess(xs)?);
-        let ys = elapsed_module!("visual-inference", self.inference(ys)?);
-        let ys = elapsed_module!("visual-postprocess", self.postprocess(ys)?);
+        let ys = elapsed_module!("GLASS", "visual-preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("GLASS", "visual-inference", self.inference(ys)?);
+        let ys = elapsed_module!("GLASS", "visual-postprocess", self.postprocess(ys)?);
         Ok(ys)
     }
 
@@ -91,8 +91,6 @@ impl GLASS {
 
             let heatmap = image::imageops::resize(&small, 900, 900, FilterType::Triangle);
 
-            let heatmap = Image::default().with_map(heatmap).with_name("anomaly");
-
             let peak_prob = Prob::default()
                 .with_name("peak_anomaly_score")
                 .with_id(0)
@@ -105,7 +103,7 @@ impl GLASS {
 
             results.push(
                 Y::default()
-                    .with_heatmaps(&[heatmap])
+                    .with_images(&[heatmap.into()])
                     .with_probs(&[peak_prob, mean_prob]),
             );
 

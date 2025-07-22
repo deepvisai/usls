@@ -10,7 +10,6 @@ pub struct DrawContext<'a> {
     pub keypoint_style: Option<&'a Style>,
     pub polygon_style: Option<&'a Style>,
     pub mask_style: Option<&'a Style>,
-    pub heatmap_style: Option<&'a Style>,
 }
 
 impl<'a> DrawContext<'a> {
