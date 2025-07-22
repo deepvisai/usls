@@ -2,8 +2,7 @@ use aksr::Builder;
 use anyhow::Result;
 
 use crate::{
-    elapsed, DType, Device, Engine, Image, Kind, Options, Processor, Scale, Task, Ts, Version, Xs,
-    X,
+    elapsed_module, Config, DType, Device, Engine, Image, Processor, Scale, Task, Version, Xs, X,
 };
 
 #[derive(Debug, Builder)]
@@ -13,44 +12,34 @@ pub struct BaseModelVisual {
     width: usize,
     batch: usize,
     processor: Processor,
-    ts: Ts,
     spec: String,
     name: &'static str,
     device: Device,
     dtype: DType,
     task: Option<Task>,
     scale: Option<Scale>,
-    kind: Option<Kind>,
     version: Option<Version>,
 }
 
 impl BaseModelVisual {
-    pub fn summary(&self) {
-        self.ts.summary();
-    }
-
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
         let err_msg = "You need to specify the image height and image width for visual model.";
-        let (batch, height, width, ts, spec) = (
+        let (batch, height, width, spec) = (
             engine.batch().opt(),
             engine.try_height().expect(err_msg).opt(),
             engine.try_width().expect(err_msg).opt(),
-            engine.ts.clone(),
             engine.spec().to_owned(),
         );
-        let processor = options
-            .to_processor()?
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
-
-        let device = options.model_device;
-        let task = options.model_task;
-        let scale = options.model_scale;
-        let dtype = options.model_dtype;
-        let kind = options.model_kind;
-        let name = options.model_name;
-        let version = options.model_version;
+        let device = config.model.device;
+        let task = config.task;
+        let scale = config.scale;
+        let dtype = config.model.dtype;
+        let name = config.name;
+        let version = config.version;
 
         Ok(Self {
             engine,
@@ -58,12 +47,10 @@ impl BaseModelVisual {
             width,
             batch,
             processor,
-            ts,
             spec,
             dtype,
             task,
             scale,
-            kind,
             device,
             version,
             name,
@@ -82,8 +69,8 @@ impl BaseModelVisual {
     }
 
     pub fn encode(&mut self, xs: &[Image]) -> Result<X> {
-        let xs = elapsed!("visual-preprocess", self.ts, { self.preprocess(xs)? });
-        let xs = elapsed!("visual-inference", self.ts, { self.inference(xs)? });
+        let xs = elapsed_module!("BaseModelVisual", "visual-preprocess", self.preprocess(xs)?);
+        let xs = elapsed_module!("BaseModelVisual", "visual-inference", self.inference(xs)?);
 
         Ok(xs[0].to_owned())
     }
@@ -94,48 +81,35 @@ pub struct BaseModelTextual {
     engine: Engine,
     batch: usize,
     processor: Processor,
-    ts: Ts,
     spec: String,
     name: &'static str,
     device: Device,
     dtype: DType,
     task: Option<Task>,
     scale: Option<Scale>,
-    kind: Option<Kind>,
     version: Option<Version>,
 }
 
 impl BaseModelTextual {
-    pub fn summary(&self) {
-        self.ts.summary();
-    }
-
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
-        let (batch, ts, spec) = (
-            engine.batch().opt(),
-            engine.ts.clone(),
-            engine.spec().to_owned(),
-        );
-        let processor = options.to_processor()?;
-        let device = options.model_device;
-        let task = options.model_task;
-        let scale = options.model_scale;
-        let dtype = options.model_dtype;
-        let kind = options.model_kind;
-        let name = options.model_name;
-        let version = options.model_version;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
+        let (batch, spec) = (engine.batch().opt(), engine.spec().to_owned());
+        let processor = Processor::try_from_config(&config.processor)?;
+        let device = config.model.device;
+        let dtype = config.model.dtype;
+        let task = config.task;
+        let scale = config.scale;
+        let name = config.name;
+        let version = config.version;
 
         Ok(Self {
             engine,
             batch,
             processor,
-            ts,
             spec,
             dtype,
             task,
             scale,
-            kind,
             device,
             version,
             name,

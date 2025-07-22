@@ -4,9 +4,10 @@ use ndarray::{s, Array2, Axis};
 use rayon::prelude::*;
 use std::fmt::Write;
 
-use crate::{elapsed, DynConf, Engine, Hbb, Image, Options, Processor, Ts, Xs, X, Y};
+use crate::{elapsed_module, Config, DynConf, Engine, Hbb, Image, Processor, Xs, X, Y};
 
 #[derive(Builder, Debug)]
+/// Grounding DINO model for open-vocabulary object detection.
 pub struct GroundingDINO {
     pub engine: Engine,
     height: usize,
@@ -18,46 +19,43 @@ pub struct GroundingDINO {
     class_ids_map: Vec<Option<usize>>,
     tokens: Vec<String>,
     token_ids: Vec<f32>,
-    ts: Ts,
+
     processor: Processor,
     spec: String,
 }
 
 impl GroundingDINO {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
         let spec = engine.spec().to_string();
-        let (batch, height, width, ts) = (
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&800.into()).opt(),
             engine.try_width().unwrap_or(&1200.into()).opt(),
-            engine.ts().clone(),
         );
-        let processor = options
-            .to_processor()?
-            .with_image_width(width as _)
-            .with_image_height(height as _);
-        let class_names = options
+        let class_names: Vec<_> = config
             .text_names
-            .as_ref()
-            .and_then(|v| {
-                let v: Vec<_> = v
-                    .iter()
-                    .map(|s| s.trim().to_ascii_lowercase())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                (!v.is_empty()).then_some(v)
-            })
-            .ok_or_else(|| anyhow::anyhow!("No valid class names were provided in the options. Ensure the 'text_names' field is non-empty and contains valid class names."))?;
+            .iter()
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if class_names.is_empty() {
+            anyhow::bail!(
+                "No valid class names were provided in the config. Ensure the 'text_names' field is non-empty and contains valid class names."
+            );
+        }
         let text_prompt = class_names.iter().fold(String::new(), |mut acc, text| {
             write!(&mut acc, "{}.", text).unwrap();
             acc
         });
+        let confs_visual = DynConf::new_or_default(config.class_confs(), class_names.len());
+        let confs_textual = DynConf::new_or_default(config.text_confs(), class_names.len());
+        let processor = Processor::try_from_config(&config.processor)?
+            .with_image_width(width as _)
+            .with_image_height(height as _);
         let token_ids = processor.encode_text_ids(&text_prompt, true)?;
         let tokens = processor.encode_text_tokens(&text_prompt, true)?;
         let class_ids_map = Self::process_class_ids(&tokens);
-        let confs_visual = DynConf::new(options.class_confs(), class_names.len());
-        let confs_textual = DynConf::new(options.text_confs(), class_names.len());
 
         Ok(Self {
             engine,
@@ -69,7 +67,6 @@ impl GroundingDINO {
             class_names,
             token_ids,
             tokens,
-            ts,
             processor,
             spec,
             class_ids_map,
@@ -107,17 +104,12 @@ impl GroundingDINO {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("GroundingDINO", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("GroundingDINO", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("GroundingDINO", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
     }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
-    }
-
     fn inference(&mut self, xs: Xs) -> Result<Xs> {
         self.engine.run(xs)
     }

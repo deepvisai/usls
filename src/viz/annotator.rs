@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::{DrawContext, Drawable, Image, Style, TextRenderer};
 
 /// Annotator provides configuration for drawing annotations on images,
-/// including styles, color palettes, and text rendering options.
+/// including styles, color palettes, and text rendering config.
 #[derive(Clone, Builder)]
 pub struct Annotator {
     prob_style: Option<Style>,
@@ -33,21 +33,24 @@ impl Default for Annotator {
 }
 
 impl Annotator {
+    /// Annotate an image with drawable objects
     pub fn annotate<T: Drawable>(&self, image: &Image, drawable: &T) -> Result<Image> {
-        let ctx = DrawContext {
-            text_renderer: &self.text_renderer,
-            prob_style: self.prob_style.as_ref(),
-            hbb_style: self.hbb_style.as_ref(),
-            obb_style: self.obb_style.as_ref(),
-            keypoint_style: self.keypoint_style.as_ref(),
-            polygon_style: self.polygon_style.as_ref(),
-            mask_style: self.mask_style.as_ref(),
-            heatmap_style: self.heatmap_style.as_ref(),
-        };
-        let mut rgba8 = image.to_rgba8();
-        drawable.draw(&ctx, &mut rgba8)?;
-
-        Ok(rgba8.into())
+        crate::elapsed_annotator!("annotate_total", {
+            let ctx = crate::elapsed_annotator!("context_creation", {
+                DrawContext {
+                    text_renderer: &self.text_renderer,
+                    prob_style: self.prob_style.as_ref(),
+                    hbb_style: self.hbb_style.as_ref(),
+                    obb_style: self.obb_style.as_ref(),
+                    keypoint_style: self.keypoint_style.as_ref(),
+                    polygon_style: self.polygon_style.as_ref(),
+                    mask_style: self.mask_style.as_ref(),
+                }
+            });
+            let mut rgba8 = crate::elapsed_annotator!("image_conversion", image.to_rgba8());
+            crate::elapsed_annotator!("drawable_render", drawable.draw(&ctx, &mut rgba8)?);
+            Ok(rgba8.into())
+        })
     }
 
     pub fn with_font(mut self, path: &str) -> Result<Self> {

@@ -3,7 +3,7 @@ use anyhow::Result;
 use ndarray::{s, Axis};
 use rayon::prelude::*;
 
-use crate::{elapsed, DynConf, Engine, Hbb, Image, Options, Processor, Ts, Xs, Y};
+use crate::{elapsed_module, Config, DynConf, Engine, Hbb, Image, Processor, Xs, Y};
 
 #[derive(Debug, Builder)]
 pub struct RFDETR {
@@ -13,31 +13,24 @@ pub struct RFDETR {
     batch: usize,
     names: Vec<String>,
     confs: DynConf,
-    ts: Ts,
     processor: Processor,
     spec: String,
 }
 
 impl RFDETR {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
-        let (batch, height, width, ts) = (
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&560.into()).opt(),
             engine.try_width().unwrap_or(&560.into()).opt(),
-            engine.ts.clone(),
         );
         let spec = engine.spec().to_owned();
-        let processor = options
-            .to_processor()?
+        let names: Vec<String> = config.class_names().to_vec();
+        let confs = DynConf::new_or_default(config.class_confs(), names.len());
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
-        let names = options
-            .class_names()
-            .expect("No class names specified.")
-            .to_vec();
-        let confs = DynConf::new(options.class_confs(), names.len());
-
         Ok(Self {
             engine,
             height,
@@ -46,7 +39,6 @@ impl RFDETR {
             spec,
             names,
             confs,
-            ts,
             processor,
         })
     }
@@ -63,9 +55,9 @@ impl RFDETR {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("RFDETR", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("RFDETR", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("RFDETR", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
     }
@@ -107,14 +99,15 @@ impl RFDETR {
                         let y = cy - h / 2.;
                         let x = x.max(0.0).min(image_width as _);
                         let y = y.max(0.0).min(image_height as _);
+                        let mut hbb = Hbb::default()
+                            .with_xywh(x, y, w, h)
+                            .with_confidence(conf)
+                            .with_id(class_id as _);
+                        if !self.names.is_empty() {
+                            hbb = hbb.with_name(&self.names[class_id]);
+                        }
 
-                        Some(
-                            Hbb::default()
-                                .with_xywh(x, y, w, h)
-                                .with_confidence(conf)
-                                .with_id(class_id as _)
-                                .with_name(&self.names[class_id]),
-                        )
+                        Some(hbb)
                     })
                     .collect();
 
@@ -128,9 +121,5 @@ impl RFDETR {
             .collect();
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 }

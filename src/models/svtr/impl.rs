@@ -3,8 +3,9 @@ use anyhow::Result;
 use ndarray::Axis;
 use rayon::prelude::*;
 
-use crate::{elapsed, DynConf, Engine, Image, Options, Processor, Ts, Xs, Y};
+use crate::{elapsed_module, Config, DynConf, Engine, Image, Processor, Text, Xs, Y};
 
+/// SVTR (Scene Text Recognition) model for text recognition.
 #[derive(Builder, Debug)]
 pub struct SVTR {
     engine: Engine,
@@ -13,23 +14,20 @@ pub struct SVTR {
     batch: usize,
     confs: DynConf,
     spec: String,
-    ts: Ts,
     processor: Processor,
 }
 
 impl SVTR {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
-        let (batch, height, width, ts) = (
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&960.into()).opt(),
             engine.try_width().unwrap_or(&960.into()).opt(),
-            engine.ts.clone(),
         );
-        let spec = options.model_spec().to_string();
-        let confs = DynConf::new(options.class_confs(), 1);
-        let processor = options
-            .to_processor()?
+        let spec = config.model.spec.to_string();
+        let confs = DynConf::new_or_default(config.class_confs(), 1);
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
         if processor.vocab().is_empty() {
@@ -45,7 +43,6 @@ impl SVTR {
             confs,
             processor,
             spec,
-            ts,
         })
     }
 
@@ -58,15 +55,11 @@ impl SVTR {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("SVTR", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("SVTR", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("SVTR", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 
     pub fn postprocess(&self, xs: Xs) -> Result<Vec<Y>> {
@@ -81,13 +74,14 @@ impl SVTR {
 
                 preds.dedup_by(|a, b| a.0 == b.0);
 
-                let text: String = preds
+                let (text, confs): (String, Vec<f32>) = preds
                     .into_iter()
                     .filter(|(id, &conf)| *id != 0 && conf >= self.confs[0])
-                    .map(|(id, _)| self.processor.vocab()[id].clone())
+                    .map(|(id, &conf)| (self.processor.vocab()[id].clone(), conf))
                     .collect();
 
-                Y::default().with_texts(&[&text])
+                Y::default().with_texts(&[Text::from(text)
+                    .with_confidence(confs.iter().sum::<f32>() / confs.len() as f32)])
             })
             .collect();
 

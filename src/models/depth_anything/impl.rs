@@ -1,7 +1,7 @@
 use aksr::Builder;
 use anyhow::Result;
 
-use crate::{elapsed, Engine, Image, Mask, Ops, Options, Processor, Ts, Xs, Y};
+use crate::{elapsed_module, Config, Engine, Image, Mask, Ops, Processor, Xs, Y};
 
 #[derive(Debug, Builder)]
 pub struct DepthAnything {
@@ -10,24 +10,20 @@ pub struct DepthAnything {
     width: usize,
     batch: usize,
     spec: String,
-    ts: Ts,
     processor: Processor,
 }
 
 impl DepthAnything {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
         let spec = engine.spec().to_string();
 
-        let (batch, height, width, ts) = (
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&518.into()).opt(),
             engine.try_width().unwrap_or(&518.into()).opt(),
-            engine.ts().clone(),
         );
-
-        let processor = options
-            .to_processor()?
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
 
@@ -37,7 +33,6 @@ impl DepthAnything {
             width,
             batch,
             spec,
-            ts,
             processor,
         })
     }
@@ -75,26 +70,17 @@ impl DepthAnything {
                 false,
                 "Bilinear",
             )?;
-            let luma: image::ImageBuffer<image::Luma<_>, Vec<_>> =
-                match image::ImageBuffer::from_raw(w1 as _, h1 as _, luma) {
-                    None => continue,
-                    Some(x) => x,
-                };
-            ys.push(Y::default().with_masks(&[Mask::default().with_mask(luma)]));
+            ys.push(Y::default().with_masks(&[Mask::new(&luma, w1, h1)?]));
         }
 
         Ok(ys)
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("DepthAnything", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("DepthAnything", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("DepthAnything", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 }

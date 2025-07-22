@@ -1,6 +1,6 @@
 use anyhow::Result;
 use usls::DataLoader;
-use usls::{models::DepthPro, Annotator, Options, Style};
+use usls::{models::DepthPro, Annotator, Config, Style};
 
 #[derive(argh::FromArgs)]
 /// Example
@@ -23,11 +23,12 @@ fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
     // model
-    let options = Options::depth_pro()
-        .with_model_dtype(args.dtype.as_str().try_into()?)
-        .with_model_device(args.device.as_str().try_into()?)
+    let config = Config::depth_pro()
+        .with_model_dtype(args.dtype.parse()?)
+        .with_model_device(args.device.parse()?)
         .commit()?;
-    let mut model = DepthPro::new(options)?;
+
+    let mut model = DepthPro::new(config)?;
 
     // load
     let xs = DataLoader::try_read_n(&["images/street.jpg"])?;
@@ -37,7 +38,7 @@ fn main() -> Result<()> {
 
     // annotate
     let annotator =
-        Annotator::default().with_mask_style(Style::mask().with_colormap256("turbo".into()));
+        Annotator::default().with_mask_style(Style::mask().with_colormap256("turbo".parse()?));
     for (x, y) in xs.iter().zip(ys.iter()) {
         annotator.annotate(x, y)?.save(format!(
             "{}.jpg",
@@ -47,6 +48,8 @@ fn main() -> Result<()> {
                 .display(),
         ))?;
     }
+
+    usls::perf(false);
 
     Ok(())
 }

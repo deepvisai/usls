@@ -2,7 +2,7 @@ use aksr::Builder;
 use anyhow::Result;
 use ndarray::{s, Array2, Axis};
 
-use crate::{elapsed, Engine, Image, Mask, Ops, Options, Polygon, Processor, Task, Ts, Xs, Y};
+use crate::{elapsed_module, Config, Engine, Image, Mask, Ops, Polygon, Processor, Task, Xs, Y};
 
 #[derive(Builder, Debug)]
 pub struct Sapiens {
@@ -11,28 +11,25 @@ pub struct Sapiens {
     width: usize,
     batch: usize,
     task: Task,
-    names_body: Option<Vec<String>>,
-    ts: Ts,
+    names_body: Vec<String>,
     processor: Processor,
     spec: String,
 }
 
 impl Sapiens {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
         let spec = engine.spec().to_string();
-        let (batch, height, width, ts) = (
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&1024.into()).opt(),
             engine.try_width().unwrap_or(&768.into()).opt(),
-            engine.ts().clone(),
         );
-        let processor = options
-            .to_processor()?
+        let task = config.task.expect("No sapiens task specified.");
+        let names_body = config.class_names;
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
-        let task = options.model_task.expect("No sapiens task specified.");
-        let names_body = options.class_names;
 
         Ok(Self {
             engine,
@@ -41,7 +38,6 @@ impl Sapiens {
             batch,
             task,
             names_body,
-            ts,
             processor,
             spec,
         })
@@ -56,9 +52,9 @@ impl Sapiens {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, {
+        let ys = elapsed_module!("Sapiens", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("Sapiens", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("Sapiens", "postprocess", {
             if let Task::InstanceSegmentation = self.task {
                 self.postprocess_seg(ys)?
             } else {
@@ -67,10 +63,6 @@ impl Sapiens {
         });
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 
     pub fn postprocess_seg(&self, xs: Xs) -> Result<Vec<Y>> {
@@ -124,8 +116,8 @@ impl Sapiens {
                 if let Some(polygon) = mask.polygon() {
                     y_polygons.push(polygon);
                 }
-                if let Some(names_body) = &self.names_body {
-                    mask = mask.with_name(&names_body[*i]);
+                if !self.names_body.is_empty() {
+                    mask = mask.with_name(&self.names_body[*i]);
                 }
                 y_masks.push(mask);
             }

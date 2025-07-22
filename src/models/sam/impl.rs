@@ -1,25 +1,33 @@
 use aksr::Builder;
 use anyhow::Result;
-use ndarray::{s, Array, Axis};
-use rand::prelude::*;
+use ndarray::{s, Axis};
+use rand::{prelude::*, rng};
+use std::str::FromStr;
 
 use crate::{
-    elapsed, DynConf, Engine, Image, Mask, Ops, Options, Polygon, Processor, Ts, Xs, X, Y,
+    elapsed_module, Config, DynConf, Engine, Image, Mask, Ops, Polygon, Processor, SamPrompt, Xs,
+    X, Y,
 };
 
+/// SAM model variants for different use cases.
 #[derive(Debug, Clone)]
 pub enum SamKind {
+    /// Original SAM model
     Sam,
+    /// SAM 2.0 with hierarchical architecture
     Sam2,
+    /// Mobile optimized SAM
     MobileSam,
+    /// High quality SAM with better segmentation
     SamHq,
+    /// Efficient SAM with edge-based segmentation
     EdgeSam,
 }
 
-impl TryFrom<&str> for SamKind {
-    type Error = anyhow::Error;
+impl FromStr for SamKind {
+    type Err = anyhow::Error;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "sam" => Ok(Self::Sam),
             "sam2" => Ok(Self::Sam2),
@@ -31,54 +39,10 @@ impl TryFrom<&str> for SamKind {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct SamPrompt {
-    points: Vec<f32>,
-    labels: Vec<f32>,
-}
-
-impl SamPrompt {
-    pub fn everything() -> Self {
-        todo!()
-    }
-
-    pub fn with_postive_point(mut self, x: f32, y: f32) -> Self {
-        self.points.extend_from_slice(&[x, y]);
-        self.labels.push(1.);
-        self
-    }
-
-    pub fn with_negative_point(mut self, x: f32, y: f32) -> Self {
-        self.points.extend_from_slice(&[x, y]);
-        self.labels.push(0.);
-        self
-    }
-
-    pub fn with_bbox(mut self, x: f32, y: f32, x2: f32, y2: f32) -> Self {
-        self.points.extend_from_slice(&[x, y, x2, y2]);
-        self.labels.extend_from_slice(&[2., 3.]);
-        self
-    }
-
-    pub fn point_coords(&self, r: f32) -> Result<X> {
-        let point_coords = Array::from_shape_vec((1, self.num_points(), 2), self.points.clone())?
-            .into_dyn()
-            .into_owned();
-        Ok(X::from(point_coords * r))
-    }
-
-    pub fn point_labels(&self) -> Result<X> {
-        let point_labels = Array::from_shape_vec((1, self.num_points()), self.labels.clone())?
-            .into_dyn()
-            .into_owned();
-        Ok(X::from(point_labels))
-    }
-
-    pub fn num_points(&self) -> usize {
-        self.points.len() / 2
-    }
-}
-
+/// Segment Anything Model (SAM) for image segmentation.
+///
+/// A foundation model for generating high-quality object masks from input prompts such as points or boxes.
+/// Supports multiple variants including the original SAM, SAM2, MobileSAM, SAM-HQ and EdgeSAM.
 #[derive(Builder, Debug)]
 pub struct SAM {
     encoder: Engine,
@@ -91,39 +55,43 @@ pub struct SAM {
     find_contours: bool,
     kind: SamKind,
     use_low_res_mask: bool,
-    ts: Ts,
+
     spec: String,
 }
 
 impl SAM {
-    pub fn new(options_encoder: Options, options_decoder: Options) -> Result<Self> {
-        let encoder = options_encoder.to_engine()?;
-        let decoder = options_decoder.to_engine()?;
+    /// Creates a new SAM model instance from the provided configuration.
+    ///
+    /// Initializes the model based on the specified SAM variant (original SAM, SAM2, MobileSAM etc.)
+    /// and configures its encoder-decoder architecture.
+    pub fn new(config: Config) -> Result<Self> {
+        let encoder = Engine::try_from_config(&config.encoder)?;
+        let decoder = Engine::try_from_config(&config.decoder)?;
+
         let (batch, height, width) = (
             encoder.batch().opt(),
             encoder.try_height().unwrap_or(&1024.into()).opt(),
             encoder.try_width().unwrap_or(&1024.into()).opt(),
         );
-        let ts = Ts::merge(&[encoder.ts(), decoder.ts()]);
+
         let spec = encoder.spec().to_owned();
 
-        let processor = options_encoder
-            .to_processor()?
-            .with_image_width(width as _)
-            .with_image_height(height as _);
-
-        let conf = DynConf::new(options_encoder.class_confs(), 1);
-        let find_contours = options_encoder.find_contours;
-        let kind = match options_encoder.sam_kind {
+        let conf = DynConf::new_or_default(config.class_confs(), 1);
+        let find_contours = config.find_contours;
+        let kind = match config.sam_kind {
             Some(x) => x,
             None => anyhow::bail!("Error: no clear `SamKind` specified."),
         };
         let use_low_res_mask = match kind {
             SamKind::Sam | SamKind::MobileSam | SamKind::SamHq => {
-                options_encoder.low_res_mask.unwrap_or(false)
+                config.sam_low_res_mask.unwrap_or(false)
             }
             SamKind::EdgeSam | SamKind::Sam2 => true,
         };
+
+        let processor = Processor::try_from_config(&config.processor)?
+            .with_image_width(width as _)
+            .with_image_height(height as _);
 
         Ok(Self {
             encoder,
@@ -132,7 +100,6 @@ impl SAM {
             batch,
             height,
             width,
-            ts,
             processor,
             kind,
             find_contours,
@@ -141,18 +108,28 @@ impl SAM {
         })
     }
 
+    /// Runs the complete segmentation pipeline on a batch of images.
+    ///
+    /// The pipeline consists of:
+    /// 1. Encoding the images into embeddings
+    /// 2. Decoding the embeddings with input prompts to generate segmentation masks
     pub fn forward(&mut self, xs: &[Image], prompts: &[SamPrompt]) -> Result<Vec<Y>> {
-        let ys = elapsed!("encode", self.ts, { self.encode(xs)? });
-        let ys = elapsed!("decode", self.ts, { self.decode(&ys, prompts)? });
+        let ys = elapsed_module!("SAM", "encode", self.encode(xs)?);
+        let ys = elapsed_module!("SAM", "decode", self.decode(&ys, prompts)?);
 
         Ok(ys)
     }
 
+    /// Encodes input images into image embeddings.
     pub fn encode(&mut self, xs: &[Image]) -> Result<Xs> {
         let xs_ = self.processor.process_images(xs)?;
         self.encoder.run(Xs::from(xs_))
     }
 
+    /// Generates segmentation masks from image embeddings and input prompts.
+    ///
+    /// Takes the image embeddings from the encoder and input prompts (points or boxes)
+    /// to generate binary segmentation masks for the prompted objects.
     pub fn decode(&mut self, xs: &Xs, prompts: &[SamPrompt]) -> Result<Vec<Y>> {
         let (image_embeddings, high_res_features_0, high_res_features_1) = match self.kind {
             SamKind::Sam2 => (&xs[0], Some(&xs[1]), Some(&xs[2])),
@@ -167,14 +144,28 @@ impl SAM {
             );
             let ratio = self.processor.images_transform_info[idx].height_scale;
 
+            let (mut point_coords, mut point_labels) = (
+                prompts[idx].point_coords(ratio)?,
+                prompts[idx].point_labels()?,
+            );
+
+            if point_coords.shape()[0] != 1 {
+                point_coords = X::from(point_coords.slice(s![-1, .., ..]).to_owned().into_dyn())
+                    .insert_axis(0)?;
+            }
+            if point_labels.shape()[0] != 1 {
+                point_labels = X::from(point_labels.slice(s![-1, ..,]).to_owned().into_dyn())
+                    .insert_axis(0)?;
+            }
+
             let args = match self.kind {
                 SamKind::Sam | SamKind::MobileSam => {
                     vec![
                         X::from(image_embedding.into_dyn().into_owned())
                             .insert_axis(0)?
                             .repeat(0, self.batch)?, // image_embedding
-                        prompts[idx].point_coords(ratio)?, // point_coords
-                        prompts[idx].point_labels()?,      // point_labels
+                        point_coords,
+                        point_labels,
                         X::zeros(&[1, 1, self.height_low_res() as _, self.width_low_res() as _]), // mask_input,
                         X::zeros(&[1]), // has_mask_input
                         X::from(vec![image_height as _, image_width as _]), // orig_im_size
@@ -189,8 +180,8 @@ impl SAM {
                             .insert_axis(0)?
                             .insert_axis(0)?
                             .repeat(0, self.batch)?, // intern_embedding
-                        prompts[idx].point_coords(ratio)?, // point_coords
-                        prompts[idx].point_labels()?,      // point_labels
+                        point_coords,
+                        point_labels,
                         X::zeros(&[1, 1, self.height_low_res() as _, self.width_low_res() as _]), // mask_input
                         X::zeros(&[1]), // has_mask_input
                         X::from(vec![image_height as _, image_width as _]), // orig_im_size
@@ -201,8 +192,8 @@ impl SAM {
                         X::from(image_embedding.into_dyn().into_owned())
                             .insert_axis(0)?
                             .repeat(0, self.batch)?,
-                        prompts[idx].point_coords(ratio)?,
-                        prompts[idx].point_labels()?,
+                        point_coords,
+                        point_labels,
                     ]
                 }
                 SamKind::Sam2 => {
@@ -228,11 +219,11 @@ impl SAM {
                         )
                         .insert_axis(0)?
                         .repeat(0, self.batch)?,
-                        prompts[idx].point_coords(ratio)?,
-                        prompts[idx].point_labels()?,
-                        X::zeros(&[1, 1, self.height_low_res() as _, self.width_low_res() as _]), // mask_input
-                        X::zeros(&[1]), // has_mask_input
-                        X::from(vec![image_height as _, image_width as _]), // orig_im_size
+                        point_coords,
+                        point_labels,
+                        X::zeros(&[1, 1, self.height_low_res() as _, self.width_low_res() as _]),
+                        X::zeros(&[1]),
+                        X::from(vec![image_height as _, image_width as _]),
                     ]
                 }
             };
@@ -293,8 +284,8 @@ impl SAM {
                 };
 
                 // contours
-                let mut rng = thread_rng();
-                let id = rng.gen_range(0..20);
+                let mut rng = rng();
+                let id = rng.random_range(0..20);
                 let mask = Mask::new(&luma, image_width, image_height)?.with_id(id);
                 if self.find_contours {
                     for polygon in mask.polygons().into_iter() {
@@ -318,10 +309,12 @@ impl SAM {
         Ok(ys)
     }
 
+    /// Returns the width of the low-resolution feature maps.
     pub fn width_low_res(&self) -> usize {
         self.width / 4
     }
 
+    /// Returns the height of the low-resolution feature maps.  
     pub fn height_low_res(&self) -> usize {
         self.height / 4
     }

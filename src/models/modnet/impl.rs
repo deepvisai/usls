@@ -2,7 +2,7 @@ use aksr::Builder;
 use anyhow::Result;
 use ndarray::Axis;
 
-use crate::{elapsed, Engine, Image, Mask, Ops, Options, Processor, Ts, Xs, Y};
+use crate::{elapsed_module, Config, Engine, Image, Mask, Ops, Processor, Xs, Y};
 
 #[derive(Builder, Debug)]
 pub struct MODNet {
@@ -10,23 +10,20 @@ pub struct MODNet {
     height: usize,
     width: usize,
     batch: usize,
-    ts: Ts,
     spec: String,
     processor: Processor,
 }
 
 impl MODNet {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
         let spec = engine.spec().to_string();
-        let (batch, height, width, ts) = (
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&512.into()).opt(),
             engine.try_width().unwrap_or(&512.into()).opt(),
-            engine.ts().clone(),
         );
-        let processor = options
-            .to_processor()?
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
 
@@ -35,7 +32,6 @@ impl MODNet {
             height,
             width,
             batch,
-            ts,
             spec,
             processor,
         })
@@ -50,15 +46,11 @@ impl MODNet {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("MODNet", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("MODNet", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("MODNet", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 
     fn postprocess(&mut self, xs: Xs) -> Result<Vec<Y>> {

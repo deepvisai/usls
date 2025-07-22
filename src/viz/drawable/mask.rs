@@ -1,8 +1,8 @@
 use crate::Drawable;
 use anyhow::Result;
-use image::{DynamicImage, RgbaImage};
+use image::{DynamicImage, Rgba, RgbaImage};
 
-use crate::{ColorMap256, DrawContext, Mask, Style};
+use crate::{Color, ColorMap256, DrawContext, Mask, Style};
 
 fn render_mask(mask: &Mask, colormap256: Option<&ColorMap256>) -> DynamicImage {
     if let Some(colormap256) = colormap256 {
@@ -10,10 +10,24 @@ fn render_mask(mask: &Mask, colormap256: Option<&ColorMap256>) -> DynamicImage {
             let idx = p[0];
             image::Rgb(colormap256.data()[idx as usize].rgb().into())
         });
-        DynamicImage::from(luma)
+        luma.into()
     } else {
-        DynamicImage::from(mask.mask().clone())
+        mask.mask().clone().into()
     }
+}
+
+fn apply_mask(origin: &RgbaImage, mask: &Mask, background_color: Option<Color>) -> DynamicImage {
+    let bg = background_color.unwrap_or(Color::green());
+    imageproc::map::map_colors2(origin, mask.mask(), |src, mask| {
+        let [r, g, b, _] = src.0;
+        let mask_alpha = mask.0[0];
+        if mask_alpha == 0 {
+            Rgba(bg.into())
+        } else {
+            Rgba([r, g, b, mask_alpha])
+        }
+    })
+    .into()
 }
 
 fn best_grid(n: usize) -> (usize, usize) {
@@ -38,6 +52,8 @@ fn draw_masks(
     masks: &[&Mask],
     colormap256: Option<&ColorMap256>,
     canvas: &mut RgbaImage,
+    mask_cutout: bool,
+    mask_background_color: Option<Color>,
 ) -> Result<()> {
     let (w, h) = canvas.dimensions();
     let n = masks.len() + 1; // +1 for original
@@ -58,7 +74,11 @@ fn draw_masks(
         let x = ((w as i32 - mw as i32) / 2).max(0) as u32;
         let y = ((h as i32 - mh as i32) / 2).max(0) as u32;
 
-        let mask_dyn = render_mask(mask, colormap256);
+        let mask_dyn = if mask_cutout {
+            apply_mask(canvas, mask, mask_background_color)
+        } else {
+            render_mask(mask, colormap256)
+        };
         image::imageops::overlay(&mut mask_img, &mask_dyn, x as i64, y as i64);
 
         let out_x = (col as u32 * w) as i64;
@@ -70,7 +90,7 @@ fn draw_masks(
     Ok(())
 }
 
-impl Drawable for Vec<Mask> {
+impl Drawable for [Mask] {
     fn get_global_style<'a>(&self, ctx: &'a DrawContext) -> Option<&'a Style> {
         ctx.mask_style
     }
@@ -89,9 +109,26 @@ impl Drawable for Vec<Mask> {
                     polygon.draw(ctx, canvas)?;
                 }
             }
+
             if style.draw_mask_polygons() {
                 for polygon in mask.polygons() {
                     polygon.draw(ctx, canvas)?;
+                }
+            }
+
+            if style.draw_mask_hbbs() {
+                if let Some(polygon) = mask.polygon() {
+                    if let Some(hbb) = polygon.hbb() {
+                        hbb.draw(ctx, canvas)?;
+                    }
+                }
+            }
+
+            if style.draw_mask_obbs() {
+                if let Some(polygon) = mask.polygon() {
+                    if let Some(obb) = polygon.obb() {
+                        obb.draw(ctx, canvas)?;
+                    }
                 }
             }
 
@@ -105,7 +142,14 @@ impl Drawable for Vec<Mask> {
             self.get_global_style(ctx),
             self.get_id(),
         );
-        draw_masks(&masks_visible, style.colormap256(), canvas)
+
+        draw_masks(
+            &masks_visible,
+            style.colormap256(),
+            canvas,
+            style.mask_cutout(),
+            style.mask_background_color().copied(),
+        )
     }
 }
 
@@ -140,9 +184,29 @@ impl Drawable for Mask {
             }
         }
 
+        if style.draw_mask_hbbs() {
+            if let Some(polygon) = self.polygon() {
+                if let Some(hbb) = polygon.hbb() {
+                    hbb.draw(ctx, canvas)?;
+                }
+            }
+        }
+
+        if style.draw_mask_obbs() {
+            if let Some(polygon) = self.polygon() {
+                if let Some(obb) = polygon.obb() {
+                    obb.draw(ctx, canvas)?;
+                }
+            }
+        }
+
         if style.visible() {
             let (w, h) = canvas.dimensions();
-            let mask_dyn = render_mask(self, style.colormap256());
+            let mask_dyn = if style.mask_cutout() {
+                apply_mask(canvas, self, style.mask_background_color().copied())
+            } else {
+                render_mask(self, style.colormap256())
+            };
 
             let (mut out, mask_x, mask_y) = if w <= h {
                 (RgbaImage::new(w * 2, h), w as i64, 0)

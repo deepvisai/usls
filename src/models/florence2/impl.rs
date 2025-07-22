@@ -4,51 +4,50 @@ use ndarray::{s, Axis};
 use rayon::prelude::*;
 
 use crate::{
-    elapsed,
-    models::{BaseModelTextual, BaseModelVisual, Quantizer},
-    Hbb, Image, LogitsSampler, Options, Polygon, Scale, Task, Ts, Xs, X, Y,
+    elapsed_module, models::Quantizer, Config, Engine, Hbb, Image, LogitsSampler, Polygon,
+    Processor, Scale, Task, Xs, X, Y,
 };
 
 #[derive(Debug, Builder)]
 pub struct Florence2 {
-    pub vision_encoder: BaseModelVisual,
-    pub text_embed: BaseModelTextual,
-    pub encoder: BaseModelTextual,
-    pub decoder: BaseModelTextual,
-    pub decoder_merged: BaseModelTextual,
-    ts: Ts,
+    pub vision_encoder: Engine,
+    pub text_embed: Engine,
+    pub encoder: Engine,
+    pub decoder: Engine,
+    pub decoder_merged: Engine,
+
     quantizer: Quantizer,
     max_length: usize,
     eos_token_id: u32,
     decoder_start_token_id: u32,
     n_kvs: usize,
+    height: usize,
+    width: usize,
+    batch: usize,
+    processor: Processor,
 }
 
 impl Florence2 {
-    pub fn new(
-        options_vision_encoder: Options,
-        options_text_embed: Options,
-        options_encoder: Options,
-        options_decoder: Options,
-        options_decoder_merged: Options,
-    ) -> Result<Self> {
-        let vision_encoder = BaseModelVisual::new(options_vision_encoder)?;
-        let text_embed = BaseModelTextual::new(options_text_embed)?;
-        let encoder = BaseModelTextual::new(options_encoder)?;
-        let decoder = BaseModelTextual::new(options_decoder)?;
-        let decoder_merged = BaseModelTextual::new(options_decoder_merged)?;
+    pub fn new(config: Config) -> Result<Self> {
+        let vision_encoder = Engine::try_from_config(&config.visual)?;
+        let text_embed = Engine::try_from_config(&config.textual)?;
+        let encoder = Engine::try_from_config(&config.textual_encoder)?;
+        let decoder = Engine::try_from_config(&config.textual_decoder)?;
+        let decoder_merged = Engine::try_from_config(&config.textual_decoder_merged)?;
+        let (batch, height, width) = (
+            vision_encoder.batch().opt(),
+            vision_encoder.try_height().unwrap_or(&1024.into()).opt(),
+            vision_encoder.try_width().unwrap_or(&1024.into()).opt(),
+        );
+        let processor = Processor::try_from_config(&config.processor)?
+            .with_image_width(width as _)
+            .with_image_height(height as _);
         let quantizer = Quantizer::default();
-        let ts = Ts::merge(&[
-            vision_encoder.engine().ts(),
-            text_embed.engine().ts(),
-            encoder.engine().ts(),
-            decoder.engine().ts(),
-            decoder_merged.engine().ts(),
-        ]);
+
         let max_length = 1024;
         let eos_token_id = 2;
         let decoder_start_token_id = 2;
-        let n_kvs = match decoder.scale() {
+        let n_kvs = match config.scale {
             Some(Scale::B) => 6,
             Some(Scale::L) => 12,
             _ => unimplemented!(),
@@ -62,10 +61,13 @@ impl Florence2 {
             decoder_merged,
             max_length,
             quantizer,
-            ts,
             eos_token_id,
             decoder_start_token_id,
             n_kvs,
+            batch,
+            height,
+            width,
+            processor,
         })
     }
 
@@ -97,31 +99,34 @@ impl Florence2 {
             .map(|im| {
                 let text = Self::process_task(task, im.height() as _, im.width() as _)
                     .prompt_for_florence2()?;
-                let ids = self.text_embed.processor().encode_text_ids(&text, true)?;
+                let ids = self.processor.encode_text_ids(&text, true)?;
                 X::from(ids).insert_axis(0)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let x = X::concat(&xs, 0)?;
-        let xs = self.text_embed.inference(x.into())?;
+        let xs = self.text_embed.run(x.into())?;
         let x = xs[0].to_owned();
 
         Ok(x)
     }
 
     pub fn forward(&mut self, xs_visual: &[Image], x_textual: &Task) -> Result<Vec<Y>> {
-        let visual_embeddings = elapsed!("visual-encode", self.ts, {
-            self.vision_encoder.encode(xs_visual)?
+        let visual_embeddings = elapsed_module!("Florence2", "visual-encode", {
+            let xs = self.processor.process_images(xs_visual)?;
+            self.batch = xs_visual.len(); // update
+            let xs = self.vision_encoder.run(xs.into())?;
+            xs[0].to_owned()
         });
 
-        let textual_embedding = elapsed!("textual-encode", self.ts, {
+        let textual_embedding = elapsed_module!("Florence2", "textual-encode", {
             self.encode_text(x_textual, xs_visual)?
         });
 
-        let generated = elapsed!("generate-then-decode", self.ts, {
+        let generated = elapsed_module!("Florence2", "generate-then-decode", {
             self.generate_then_decode(&visual_embeddings, &textual_embedding)?
         });
 
-        let ys = elapsed!("postprocess", self.ts, {
+        let ys = elapsed_module!("Florence2", "postprocess", {
             self.postprocess(&generated, xs_visual, x_textual)?
         });
 
@@ -141,7 +146,7 @@ impl Florence2 {
         let attention_mask = X::ones(&[self.batch(), inputs_embeds.dims()[1]]);
 
         // encoder
-        let last_hidden_state = self.encoder.inference(Xs::from(vec![
+        let last_hidden_state = self.encoder.run(Xs::from(vec![
             attention_mask.clone(),
             inputs_embeds.clone(),
         ]))?[0]
@@ -150,7 +155,7 @@ impl Florence2 {
         // decoder
         let inputs_embeds = inputs_embeds.slice(s![.., -1.., ..]);
         let inputs_embeds = X::from(inputs_embeds.to_owned().into_dyn());
-        let mut decoder_outputs = self.decoder.inference(Xs::from(vec![
+        let mut decoder_outputs = self.decoder.run(Xs::from(vec![
             attention_mask.clone(),
             last_hidden_state.clone(),
             inputs_embeds,
@@ -215,7 +220,7 @@ impl Florence2 {
 
             // decode
             let next_tokens = X::from(last_tokens.clone()).insert_axis(1)?;
-            let inputs_embeds = &self.text_embed.inference(Xs::from(next_tokens))?[0].clone();
+            let inputs_embeds = &self.text_embed.run(Xs::from(next_tokens))?[0].clone();
             let use_cache = X::ones(&[1]);
             let mut xs = vec![
                 attention_mask.clone(),
@@ -229,13 +234,13 @@ impl Florence2 {
                 xs.push(encoder_kvs[i * 2 + 1].clone());
             }
             xs.push(use_cache);
-            decoder_outputs = self.decoder_merged.inference(xs.into())?;
+            decoder_outputs = self.decoder_merged.run(xs.into())?;
         }
 
         // batch decode
         let texts = self
-            .text_embed
-            .processor()
+            // .text_embed
+            .processor
             .decode_tokens_batch(&token_ids, false)?;
 
         Ok(texts)
@@ -265,13 +270,13 @@ impl Florence2 {
                 // postprocess
                 let mut y = Y::default();
                 if let Task::Caption(_) | Task::Ocr = x_textual {
-                    y = y.with_texts(&[&text]);
+                    y = y.with_texts(&[text.into()]);
                 } else {
                     let elems = Self::loc_parse(&text)?;
                     match x_textual {
                         Task::RegionToCategory(..) | Task::RegionToDescription(..) => {
                             let text = elems[0][0].clone();
-                            y = y.with_texts(&[&text]);
+                            y = y.with_texts(&[text.into()]);
                         }
                         Task::ObjectDetection
                         | Task::OpenSetDetection(_)
@@ -414,13 +419,5 @@ impl Florence2 {
             ys.push(y);
         }
         Ok(ys)
-    }
-
-    pub fn batch(&self) -> usize {
-        self.vision_encoder.batch() as _
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 }

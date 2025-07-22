@@ -3,7 +3,7 @@ use anyhow::Result;
 use ndarray::{s, Axis};
 use rayon::prelude::*;
 
-use crate::{elapsed, DynConf, Engine, Hbb, Image, Options, Processor, Ts, Xs, X, Y};
+use crate::{elapsed_module, Config, DynConf, Engine, Hbb, Image, Processor, Xs, X, Y};
 
 #[derive(Debug, Builder)]
 pub struct RTDETR {
@@ -13,30 +13,24 @@ pub struct RTDETR {
     batch: usize,
     names: Vec<String>,
     confs: DynConf,
-    ts: Ts,
     processor: Processor,
     spec: String,
 }
 
 impl RTDETR {
-    pub fn new(options: Options) -> Result<Self> {
-        let engine = options.to_engine()?;
-        let (batch, height, width, ts) = (
+    pub fn new(config: Config) -> Result<Self> {
+        let engine = Engine::try_from_config(&config.model)?;
+        let (batch, height, width) = (
             engine.batch().opt(),
             engine.try_height().unwrap_or(&640.into()).opt(),
             engine.try_width().unwrap_or(&640.into()).opt(),
-            engine.ts.clone(),
         );
         let spec = engine.spec().to_owned();
-        let processor = options
-            .to_processor()?
+        let names: Vec<String> = config.class_names().to_vec();
+        let confs = DynConf::new_or_default(config.class_confs(), names.len());
+        let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
-        let names = options
-            .class_names()
-            .expect("No class names specified.")
-            .to_vec();
-        let confs = DynConf::new(options.class_confs(), names.len());
 
         Ok(Self {
             engine,
@@ -46,7 +40,6 @@ impl RTDETR {
             spec,
             names,
             confs,
-            ts,
             processor,
         })
     }
@@ -67,15 +60,11 @@ impl RTDETR {
     }
 
     pub fn forward(&mut self, xs: &[Image]) -> Result<Vec<Y>> {
-        let ys = elapsed!("preprocess", self.ts, { self.preprocess(xs)? });
-        let ys = elapsed!("inference", self.ts, { self.inference(ys)? });
-        let ys = elapsed!("postprocess", self.ts, { self.postprocess(ys)? });
+        let ys = elapsed_module!("RTDETR", "preprocess", self.preprocess(xs)?);
+        let ys = elapsed_module!("RTDETR", "inference", self.inference(ys)?);
+        let ys = elapsed_module!("RTDETR", "postprocess", self.postprocess(ys)?);
 
         Ok(ys)
-    }
-
-    pub fn summary(&mut self) {
-        self.ts.summary();
     }
 
     fn postprocess(&mut self, xs: Xs) -> Result<Vec<Y>> {
@@ -87,14 +76,12 @@ impl RTDETR {
             .enumerate()
             .filter_map(|(idx, ((labels, boxes), scores))| {
                 let ratio = self.processor.images_transform_info[idx].height_scale;
-
                 let mut y_bboxes = Vec::new();
                 for (i, &score) in scores.iter().enumerate() {
                     let class_id = labels[i] as usize;
                     if score < self.confs[class_id] {
                         continue;
                     }
-
                     let xyxy = boxes.slice(s![i, ..]);
                     let (x1, y1, x2, y2) = (
                         xyxy[0] / ratio,
@@ -102,14 +89,14 @@ impl RTDETR {
                         xyxy[2] / ratio,
                         xyxy[3] / ratio,
                     );
-
-                    y_bboxes.push(
-                        Hbb::default()
-                            .with_xyxy(x1.max(0.0f32), y1.max(0.0f32), x2, y2)
-                            .with_confidence(score)
-                            .with_id(class_id)
-                            .with_name(&self.names[class_id]),
-                    );
+                    let mut hbb = Hbb::default()
+                        .with_xyxy(x1.max(0.0f32), y1.max(0.0f32), x2, y2)
+                        .with_confidence(score)
+                        .with_id(class_id);
+                    if !self.names.is_empty() {
+                        hbb = hbb.with_name(&self.names[class_id]);
+                    }
+                    y_bboxes.push(hbb);
                 }
 
                 let mut y = Y::default();

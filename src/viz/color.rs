@@ -61,28 +61,36 @@ impl From<Color> for [u8; 3] {
     }
 }
 
-impl TryFrom<&str> for Color {
-    type Error = &'static str;
+impl std::str::FromStr for Color {
+    type Err = anyhow::Error;
 
-    fn try_from(x: &str) -> Result<Self, Self::Error> {
+    fn from_str(x: &str) -> Result<Self, Self::Err> {
         let hex = x.trim_start_matches('#');
         let hex = match hex.len() {
             6 => format!("{}ff", hex),
             8 => hex.to_string(),
-            _ => return Err("Failed to convert `Color` from str: invalid length"),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Failed to convert `Color` from str: invalid length"
+                ))
+            }
         };
 
         u32::from_str_radix(&hex, 16)
             .map(Self)
-            .map_err(|_| "Failed to convert `Color` from str: invalid hex")
+            .map_err(|_| anyhow::anyhow!("Failed to convert `Color` from str: invalid hex"))
     }
 }
 
 impl Color {
+    /// Creates a new Color from RGBA components.
+    /// Each component is an 8-bit value (0-255).
     const fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self(((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | (a as u32))
     }
 
+    /// Returns the color components as RGBA tuple.
+    /// Each component is an 8-bit value (0-255).
     pub fn rgba(&self) -> (u8, u8, u8, u8) {
         let r = ((self.0 >> 24) & 0xff) as u8;
         let g = ((self.0 >> 16) & 0xff) as u8;
@@ -91,87 +99,97 @@ impl Color {
         (r, g, b, a)
     }
 
+    /// Returns the RGB components as a tuple, excluding alpha.
+    /// Each component is an 8-bit value (0-255).
     pub fn rgb(&self) -> (u8, u8, u8) {
         let (r, g, b, _) = self.rgba();
         (r, g, b)
     }
 
+    /// Returns the BGR components as a tuple.
+    /// Useful for OpenCV-style color formats.
     pub fn bgr(&self) -> (u8, u8, u8) {
         let (r, g, b) = self.rgb();
         (b, g, r)
     }
 
+    /// Returns the red component (0-255).
     pub fn r(&self) -> u8 {
         self.rgba().0
     }
 
+    /// Returns the green component (0-255).
     pub fn g(&self) -> u8 {
         self.rgba().1
     }
 
+    /// Returns the blue component (0-255).
     pub fn b(&self) -> u8 {
         self.rgba().2
     }
 
+    /// Returns the alpha component (0-255).
     pub fn a(&self) -> u8 {
         self.rgba().3
     }
 
+    /// Returns the color as a hex string in the format "#RRGGBBAA".
     pub fn hex(&self) -> String {
         format!("#{:08x}", self.0)
     }
 
+    /// Creates a new color with the specified alpha value while keeping RGB components.
     pub fn with_alpha(self, a: u8) -> Self {
         let (r, g, b) = self.rgb();
 
         (r, g, b, a).into()
     }
 
+    /// Creates a black color (RGB: 0,0,0) with full opacity.
     pub fn black() -> Color {
         [0, 0, 0, 255].into()
     }
 
+    /// Creates a white color (RGB: 255,255,255) with full opacity.
     pub fn white() -> Color {
         [255, 255, 255, 255].into()
     }
 
+    /// Creates a green color (RGB: 0,255,0) with full opacity.
     pub fn green() -> Color {
         [0, 255, 0, 255].into()
     }
 
+    /// Creates a red color (RGB: 255,0,0) with full opacity.
     pub fn red() -> Color {
         [255, 0, 0, 255].into()
     }
 
+    /// Creates a blue color (RGB: 0,0,255) with full opacity.
     pub fn blue() -> Color {
         [0, 0, 255, 255].into()
     }
 
+    /// Creates a color palette from a slice of convertible values.
     pub fn create_palette<A: Into<Self> + Copy>(xs: &[A]) -> Vec<Self> {
         xs.iter().copied().map(Into::into).collect()
     }
 
-    pub fn try_create_palette<A: TryInto<Self> + Copy>(xs: &[A]) -> Result<Vec<Self>>
-    where
-        <A as TryInto<Self>>::Error: std::fmt::Debug,
-    {
-        xs.iter()
-            .copied()
-            .map(|x| {
-                x.try_into()
-                    .map_err(|e| anyhow::anyhow!("Failed to convert: {:?}", e))
-            })
-            .collect()
+    /// Attempts to create a color palette from hex color strings.
+    /// Returns an error if any string is not a valid hex color.
+    pub fn try_create_palette(xs: &[&str]) -> Result<Vec<Self>> {
+        xs.iter().map(|x| x.parse()).collect()
     }
 
+    /// Creates a palette of random colors with the specified size.
     pub fn palette_rand(n: usize) -> Vec<Self> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let xs: Vec<(u8, u8, u8)> = (0..n)
             .map(|_| {
                 (
-                    rng.gen_range(0..=255),
-                    rng.gen_range(0..=255),
-                    rng.gen_range(0..=255),
+                    rng.random_range(0..=255),
+                    rng.random_range(0..=255),
+                    rng.random_range(0..=255),
                 )
             })
             .collect();
@@ -179,20 +197,24 @@ impl Color {
         Self::create_palette(&xs)
     }
 
+    /// Returns a predefined palette of 20 base colors.
     pub fn palette_base_20() -> Vec<Self> {
         Self::create_palette(&PALETTE_BASE)
     }
 
+    /// Returns a cotton candy themed palette of 5 colors.
     pub fn palette_cotton_candy_5() -> Result<Vec<Self>> {
         Self::try_create_palette(&["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"])
     }
 
+    /// Returns a tropical sunrise themed palette of 5 colors.
     #[inline(always)]
     pub fn palette_tropical_sunrise_5() -> Result<Vec<Self>> {
         // https://colorkit.co/palette/e12729-f37324-f8cc1b-72b043-007f4e/
         Self::try_create_palette(&["#e12729", "#f37324", "#f8cc1b", "#72b043", "#007f4e"])
     }
 
+    /// Returns a rainbow themed palette of 10 colors.
     pub fn palette_rainbow_10() -> Vec<Self> {
         Self::create_palette(&[
             0xff595eff, 0xff924cff, 0xffca3aff, 0xc5ca30ff, 0x8ac926ff, 0x52a675ff, 0x1982c4ff,
@@ -200,19 +222,22 @@ impl Color {
         ])
     }
 
+    /// Returns the COCO dataset color palette with 80 colors.
     pub fn palette_coco_80() -> Vec<Self> {
         Self::create_palette(&PALETTE_COCO_80)
     }
 
+    /// Returns the Pascal VOC dataset color palette with 21 colors.
     pub fn palette_pascal_voc_21() -> Vec<Self> {
         Self::create_palette(&PALETTE_PASCAL_VOC_20)
     }
+    /// Returns the ADE20K dataset color palette with 150 colors.
     pub fn palette_ade20k_150() -> Vec<Self> {
         Self::create_palette(&PALETTE_ADE20K_150)
     }
 }
 
-const PALETTE_BASE: [u32; 39] = [
+const PALETTE_BASE: [u32; 38] = [
     0x00ff7fff, // SpringGreen
     0xff69b4ff, // HotPink
     0xff6347ff, // Tomato
@@ -242,7 +267,6 @@ const PALETTE_BASE: [u32; 39] = [
     0x2f4f4fff, // DarkSlateGray
     0x8b4513ff, // SaddleBrown
     0xffb6c1ff, // LightPink
-    0x000000ff, // Black
     0xffffffff, // White
     0xff4500ff, // OrangeRed
     0x4682b4ff, // SteelBlue

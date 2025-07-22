@@ -1,5 +1,5 @@
 use anyhow::Result;
-use usls::{models::YOLO, Annotator, DataLoader, Options};
+use usls::{models::YOLO, Annotator, Config, DataLoader};
 
 #[derive(argh::FromArgs)]
 /// Example
@@ -18,8 +18,8 @@ fn main() -> Result<()> {
     let args: Args = argh::from_env();
 
     // build model
-    let config = Options::doclayout_yolo_docstructbench()
-        .with_model_device(args.device.as_str().try_into()?)
+    let config = Config::doclayout_yolo_docstructbench()
+        .with_model_device(args.device.parse()?)
         .commit()?;
     let mut model = YOLO::new(config)?;
 
@@ -40,8 +40,7 @@ fn main() -> Result<()> {
                 .display(),
         ))?;
     }
-
-    model.summary();
+    usls::perf(false);
 
     Ok(())
 }

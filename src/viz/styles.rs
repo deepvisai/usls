@@ -2,25 +2,30 @@ use aksr::Builder;
 
 use crate::{Color, ColorMap256, Skeleton};
 
+/// Style configuration for drawing annotations and visualizations.
 #[derive(Debug, Clone, Builder, PartialEq)]
 pub struct Style {
-    visible: bool,                    // For ALL
-    text_visible: bool,               // For ALL
-    draw_fill: bool,                  // For ALL
-    draw_outline: bool,               // For ALL
-    color_fill_alpha: Option<u8>,     // Alpha for fill
-    radius: usize,                    // For Keypoint
-    text_x_pos: f32,                  // For Probs
-    text_y_pos: f32,                  // For Probs
-    thickness: usize,                 // For Hbb
-    thickness_threshold: f32,         // For Hbb
-    draw_mask_polygons: bool,         // For Masks
-    draw_mask_polygon_largest: bool,  // For Masks
-    text_loc: TextLoc,                // For ALL
-    color: StyleColors,               // For ALL
-    palette: Vec<Color>,              // For ALL
-    skeleton: Option<Skeleton>,       // For Keypoints
-    colormap256: Option<ColorMap256>, // For Masks
+    visible: bool,                        // For ALL
+    text_visible: bool,                   // For ALL
+    draw_fill: bool,                      // For ALL
+    draw_outline: bool,                   // For ALL
+    color_fill_alpha: Option<u8>,         // Alpha for fill
+    radius: usize,                        // For Keypoint
+    text_x_pos: f32,                      // For Probs
+    text_y_pos: f32,                      // For Probs
+    thickness: usize,                     // For Hbb
+    thickness_threshold: f32,             // For Hbb
+    draw_mask_polygons: bool,             // For Masks
+    draw_mask_polygon_largest: bool,      // For Masks
+    draw_mask_hbbs: bool,                 // For Masks
+    draw_mask_obbs: bool,                 // For Masks
+    mask_cutout: bool,                    // For Masks
+    mask_background_color: Option<Color>, // For Masks
+    text_loc: TextLoc,                    // For ALL
+    color: StyleColors,                   // For ALL
+    palette: Vec<Color>,                  // For ALL
+    skeleton: Option<Skeleton>,           // For Keypoints
+    colormap256: Option<ColorMap256>,     // For Masks
     decimal_places: usize,
     #[args(set_pre = "show")]
     confidence: bool,
@@ -41,6 +46,10 @@ impl Default for Style {
             color_fill_alpha: None,
             draw_mask_polygons: false,
             draw_mask_polygon_largest: false,
+            draw_mask_hbbs: false,
+            draw_mask_obbs: false,
+            mask_cutout: false,
+            mask_background_color: None,
             radius: 3,
             text_x_pos: 0.05,
             text_y_pos: 0.05,
@@ -130,6 +139,7 @@ impl Style {
     }
 }
 
+/// Color configuration for different visual elements.
 #[derive(Debug, Builder, Default, Clone, PartialEq, Copy)]
 pub struct StyleColors {
     pub outline: Option<Color>,
@@ -138,6 +148,7 @@ pub struct StyleColors {
     pub text_bg: Option<Color>,
 }
 
+/// Text positioning options relative to visual elements.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TextLoc {
     InnerTopLeft,
