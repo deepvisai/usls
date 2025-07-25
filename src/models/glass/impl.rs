@@ -9,9 +9,6 @@ use ndarray::Axis;
 #[derive(Debug)]
 pub struct GLASS {
     engine: Engine,
-    height: usize,
-    width: usize,
-    batch: usize,
     processor: Processor,
 }
 
@@ -19,23 +16,16 @@ impl GLASS {
     pub fn new(config: Config) -> Result<Self> {
         let engine = Engine::try_from_config(&config.model)?;
 
-        let (batch, height, width) = (
-            engine.batch().opt(),
-            engine.try_height().unwrap_or(&288.into()).opt(),
-            engine.try_width().unwrap_or(&288.into()).opt(),
+        let (height, width) = (
+            engine.try_height().unwrap_or(&384.into()).opt(),
+            engine.try_width().unwrap_or(&384.into()).opt(),
         );
 
         let processor = Processor::try_from_config(&config.processor)?
             .with_image_width(width as _)
             .with_image_height(height as _);
 
-        Ok(Self {
-            engine,
-            height,
-            width,
-            batch,
-            processor,
-        })
+        Ok(Self { engine, processor })
     }
 
     fn preprocess(&mut self, xs: &[Image]) -> Result<Xs> {
@@ -89,8 +79,6 @@ impl GLASS {
                 }
             }
 
-            let heatmap = image::imageops::resize(&small, 900, 900, FilterType::Triangle);
-
             let peak_prob = Prob::default()
                 .with_name("peak_anomaly_score")
                 .with_id(0)
@@ -103,7 +91,7 @@ impl GLASS {
 
             results.push(
                 Y::default()
-                    .with_images(&[heatmap.into()])
+                    .with_images(&[small.into()])
                     .with_probs(&[peak_prob, mean_prob]),
             );
 
