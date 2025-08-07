@@ -4,6 +4,7 @@ use crate::{Color, ColorMap256, Skeleton};
 
 /// Style configuration for drawing annotations and visualizations.
 #[derive(Debug, Clone, Builder, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Style {
     visible: bool,                        // For ALL
     text_visible: bool,                   // For ALL
@@ -141,6 +142,7 @@ impl Style {
 
 /// Color configuration for different visual elements.
 #[derive(Debug, Builder, Default, Clone, PartialEq, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StyleColors {
     pub outline: Option<Color>,
     pub fill: Option<Color>,
@@ -150,6 +152,7 @@ pub struct StyleColors {
 
 /// Text positioning options relative to visual elements.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TextLoc {
     InnerTopLeft,
     InnerTopCenter,

@@ -4,6 +4,7 @@ use crate::{InstanceMeta, Keypoint, Style};
 
 /// Horizontal bounding box with position, size, and metadata.
 #[derive(Builder, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hbb {
     x: f32,
     y: f32,

@@ -5,6 +5,7 @@ use crate::{InstanceMeta, Style};
 
 /// Represents a keypoint in a 2D space with optional metadata.
 #[derive(Builder, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Keypoint {
     x: f32,
     y: f32,

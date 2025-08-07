@@ -2,6 +2,7 @@ use crate::Color;
 
 /// Connection between two keypoints with optional color.
 #[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
     pub indices: (usize, usize),
     pub color: Option<Color>,
@@ -27,6 +28,7 @@ impl From<(usize, usize, Color)> for Connection {
 
 /// Skeleton structure containing keypoint connections.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Skeleton {
     pub connections: Vec<Connection>,
 }

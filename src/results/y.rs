@@ -9,6 +9,7 @@ use crate::{Hbb, Image, Keypoint, Mask, Obb, Polygon, Prob, Text};
 /// polygons, masks, text annotations, and embeddings.
 ///
 #[derive(Builder, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Y {
     texts: Option<Vec<Text>>,
     probs: Option<Vec<Prob>>,
@@ -16,8 +17,14 @@ pub struct Y {
     keypointss: Option<Vec<Vec<Keypoint>>>,
     hbbs: Option<Vec<Hbb>>,
     obbs: Option<Vec<Obb>>,
+    // TODO: Figure out how to serialize polygons
+    #[serde(skip)]
     polygons: Option<Vec<Polygon>>,
+    // TODO: Figure out how to serialize masks
+    #[serde(skip)]
     masks: Option<Vec<Mask>>,
+    // TODO: Figure out how to serialize images
+    #[serde(skip)]
     images: Option<Vec<Image>>,
 }
 

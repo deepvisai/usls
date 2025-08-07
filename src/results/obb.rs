@@ -4,6 +4,7 @@ use crate::{Hbb, InstanceMeta, Keypoint, Polygon, Style};
 
 /// Oriented bounding box with four vertices and metadata.
 #[derive(Builder, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Obb {
     vertices: [[f32; 2]; 4], // ordered
     meta: InstanceMeta,
