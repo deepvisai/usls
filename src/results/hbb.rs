@@ -1,10 +1,10 @@
 use aksr::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::{InstanceMeta, Keypoint, Style};
 
 /// Horizontal bounding box with position, size, and metadata.
-#[derive(Builder, Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Builder, Clone, Default, Serialize, Deserialize)]
 pub struct Hbb {
     x: f32,
     y: f32,

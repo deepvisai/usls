@@ -1,10 +1,10 @@
 use aksr::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::{InstanceMeta, Style};
 
 /// Text detection result with content and metadata.
-#[derive(Builder, Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Builder, Clone, Default, Serialize, Deserialize)]
 pub struct Text {
     text: String,
     meta: InstanceMeta,

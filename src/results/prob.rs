@@ -1,10 +1,10 @@
 use aksr::Builder;
+use serde::{Deserialize, Serialize};
 
 use crate::{InstanceMeta, Style};
 
 /// Probability result with classification metadata.
-#[derive(Builder, Clone, PartialEq, Default, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Builder, Clone, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct Prob {
     meta: InstanceMeta,
     style: Option<Style>,

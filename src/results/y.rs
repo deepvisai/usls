@@ -1,6 +1,7 @@
 use aksr::Builder;
 
 use crate::{Hbb, Image, Keypoint, Mask, Obb, Polygon, Prob, Text};
+use serde::{Deserialize, Serialize};
 
 /// Container for inference results for each image.
 ///
@@ -8,8 +9,7 @@ use crate::{Hbb, Image, Keypoint, Mask, Obb, Polygon, Prob, Text};
 /// including probabilities, bounding boxes, keypoints, minimum bounding rectangles,
 /// polygons, masks, text annotations, and embeddings.
 ///
-#[derive(Builder, Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Builder, Clone, Default, Serialize, Deserialize)]
 pub struct Y {
     texts: Option<Vec<Text>>,
     probs: Option<Vec<Prob>>,

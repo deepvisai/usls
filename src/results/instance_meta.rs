@@ -1,6 +1,7 @@
-#[derive(aksr::Builder, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(aksr::Builder, Clone, PartialEq, Serialize, Deserialize)]
 /// Metadata for detection instances including ID, confidence, and name.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InstanceMeta {
     uid: usize,
     id: Option<usize>,

@@ -1,11 +1,11 @@
 use aksr::Builder;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Mul, Sub};
 
 use crate::{InstanceMeta, Style};
 
 /// Represents a keypoint in a 2D space with optional metadata.
-#[derive(Builder, Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Builder, Default, Clone, Serialize, Deserialize)]
 pub struct Keypoint {
     x: f32,
     y: f32,

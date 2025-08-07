@@ -1,8 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::Color;
 
 /// 256-color colormap variants for data visualization.
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ColorMap256 {
     Turbo,
     Inferno,

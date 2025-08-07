@@ -1,9 +1,9 @@
 use anyhow::Result;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 /// Color: 0xRRGGBBAA
-#[derive(Default, Copy, Clone, PartialEq, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Default, Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Color(pub u32);
 
 impl From<u32> for Color {
