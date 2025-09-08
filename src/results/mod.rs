@@ -8,6 +8,7 @@ mod polygon;
 mod prob;
 mod skeleton;
 mod text;
+mod heatmap;
 mod y;
 
 pub use hbb::*;
@@ -19,4 +20,5 @@ pub use polygon::*;
 pub use prob::*;
 pub use skeleton::*;
 pub use text::*;
+pub use heatmap::*;
 pub use y::*;
