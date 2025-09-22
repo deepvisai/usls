@@ -30,6 +30,15 @@ impl PartialEq for Heatmap {
     }
 }
 
+impl From<GrayImage> for Heatmap {
+    fn from(value: GrayImage) -> Self {
+        Self {
+            map: value,
+            ..Default::default()
+        }
+    }
+}
+
 impl Heatmap {
     pub fn new(u8s: &[u8], width: u32, height: u32) -> Result<Self> {
         let map: image::ImageBuffer<image::Luma<_>, Vec<_>> =

@@ -1,7 +1,7 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
-use crate::{elapsed_module, Config, Engine, Image, Prob, Processor, Xs, Y};
+use crate::{elapsed_module, Config, Engine, Image, Processor, Xs, Y, Heatmap};
 use anyhow::Result;
-use image::{imageops::FilterType, GrayImage, Luma};
+use image::{GrayImage, Luma};
 use log::debug;
 use ndarray::Axis;
 
@@ -47,25 +47,12 @@ impl GLASS {
     fn postprocess(&self, xs: Xs) -> Result<Vec<Y>> {
         let mut results = Vec::new();
         let output_tensor = &xs[0]; // shape: [B, H, W] or [B, 1, H, W]
-        println!("Postprocess input shape: {:?}", output_tensor.shape());
-
-        debug!("Output tensor shape: {:?}", output_tensor.shape());
 
         for (i, batch_out) in output_tensor.axis_iter(Axis(0)).enumerate() {
-            debug!("Processing batch index: {}", i);
-            debug!("Batch tensor shape: {:?}", batch_out.shape());
 
             let raw_map = batch_out.to_owned().mapv(|v| v.clamp(0.0, 1.0));
             let max_score = raw_map.iter().copied().fold(0.0, f32::max);
-
-            let sum: f32 = raw_map.iter().copied().sum();
-            let count = raw_map.len();
-            let mean_score = if count > 0 { sum / count as f32 } else { 0.0 };
-
-            debug!("Max anomaly score: {:.4}", max_score);
-
             let (h, w) = (raw_map.shape()[0], raw_map.shape()[1]);
-            debug!("Heatmap size: {}x{}", w, h);
 
             let mut small = GrayImage::new(w as u32, h as u32);
             for (y, row) in raw_map.outer_iter().enumerate() {
@@ -79,20 +66,11 @@ impl GLASS {
                 }
             }
 
-            let peak_prob = Prob::default()
-                .with_name("peak_anomaly_score")
-                .with_id(0)
-                .with_confidence(max_score);
-
-            let mean_prob = Prob::default()
-                .with_name("mean_anomaly_score")
-                .with_id(1)
-                .with_confidence(mean_score);
+            let heatmap = Heatmap::from(small).with_confidence(max_score);
 
             results.push(
                 Y::default()
-                    .with_images(&[small.into()])
-                    .with_probs(&[peak_prob, mean_prob]),
+                    .with_heatmaps(&[heatmap])
             );
 
             debug!("Finished processing batch {}", i);
