@@ -17,8 +17,8 @@ impl Dinomaly {
         let engine = Engine::try_from_config(&config.model)?;
 
         let (height, width) = (
-            engine.try_height().unwrap_or(&384.into()).opt(),
-            engine.try_width().unwrap_or(&384.into()).opt(),
+            engine.try_height().unwrap_or(&392.into()).opt(),
+            engine.try_width().unwrap_or(&392.into()).opt(),
         );
 
         let processor = Processor::try_from_config(&config.processor)?
@@ -56,35 +56,26 @@ impl Dinomaly {
     fn postprocess(&self, xs: Xs) -> Result<Vec<Y>> {
         let mut results = Vec::new();
 
-        // Check that we have all expected outputs
-        if xs.len() < 4 {
-            return Err(anyhow::anyhow!("Expected 4 outputs, got {}", xs.len()));
-        }
-
         let pred_score_tensor = &xs[0]; // Global anomaly score
-        let anomaly_map_tensor = &xs[2]; // 🎯 This is the spatial heatmap!
+        let anomaly_map_tensor = &xs[2]; // Spatial heatmap
 
-        // For each item in the batch, build a Heatmap from the anomaly map
         for (i, batch_out) in anomaly_map_tensor.axis_iter(Axis(0)).enumerate() {
-            // Squeeze optional channel dim: [1, H, W] -> [H, W]
-            let raw_map = if batch_out.ndim() == 3 {
-                batch_out.index_axis(Axis(0), 0).to_owned()
-            } else {
-                batch_out.to_owned()
-            };
+            // batch_out is now [1, 392, 392] for each batch item
+            // Skip the channel dimension and get to [392, 392]
+            let map_2d = batch_out.index_axis(Axis(0), 0);
 
-            // Clamp to [0,1] and convert to 8-bit grayscale image
-            let raw_map = raw_map.mapv(|v| v.clamp(0.0, 1.0));
-            let (h, w) = (raw_map.shape()[0], raw_map.shape()[1]);
+            let (height, width) = (map_2d.shape()[0], map_2d.shape()[1]);
 
-            let mut gray = GrayImage::new(w as u32, h as u32);
-            for (y, row) in raw_map.outer_iter().enumerate() {
-                for (x, &v) in row.iter().enumerate() {
-                    gray.put_pixel(x as u32, y as u32, Luma([(v * 255.0) as u8]));
-                }
-            }
+            // Flatten and convert to pixels
+            let pixels: Vec<u8> = map_2d
+                .iter() // or use .flatten() if you prefer
+                .map(|&v| (v.clamp(0.0, 1.0) * 255.0) as u8)
+                .collect();
 
-            // Pull the global score for this item and clamp to [0,1]
+            let gray = GrayImage::from_raw(width as u32, height as u32, pixels)
+                .ok_or_else(|| anyhow::anyhow!("Failed to create image"))?;
+
+            // Get score for this batch item
             let global_score = if pred_score_tensor.ndim() == 1 {
                 pred_score_tensor[[i]]
             } else {
@@ -92,11 +83,8 @@ impl Dinomaly {
             }
             .clamp(0.0, 1.0);
 
-            // ✅ Only store the anomaly map; set confidence = pred score
             let heatmap = Heatmap::from(gray).with_confidence(global_score);
             results.push(Y::default().with_heatmaps(&[heatmap]));
-
-            debug!("Processed item {} with confidence={:.4}", i, global_score);
         }
 
         Ok(results)

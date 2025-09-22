@@ -17,8 +17,8 @@ impl GLASS {
         let engine = Engine::try_from_config(&config.model)?;
 
         let (height, width) = (
-            engine.try_height().unwrap_or(&384.into()).opt(),
-            engine.try_width().unwrap_or(&384.into()).opt(),
+            engine.try_height().unwrap_or(&256.into()).opt(),
+            engine.try_width().unwrap_or(&256.into()).opt(),
         );
 
         let processor = Processor::try_from_config(&config.processor)?
