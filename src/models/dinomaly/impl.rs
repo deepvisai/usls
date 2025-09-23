@@ -1,7 +1,7 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
 use crate::{elapsed_module, Config, Engine, Heatmap, Image, Processor, Xs, Y};
 use anyhow::Result;
-use image::{GrayImage, Luma};
+use image::{GrayImage};
 use log::debug;
 use ndarray::Axis;
 
@@ -57,7 +57,7 @@ impl Dinomaly {
         let mut results = Vec::new();
 
         let pred_score_tensor = &xs[0]; // Global anomaly score
-        let anomaly_map_tensor = &xs[2]; // Spatial heatmap
+        let anomaly_map_tensor = &xs[1]; // Spatial heatmap
 
         for (i, batch_out) in anomaly_map_tensor.axis_iter(Axis(0)).enumerate() {
             // batch_out is now [1, 392, 392] for each batch item
