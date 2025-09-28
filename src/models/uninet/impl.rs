@@ -58,8 +58,6 @@ impl UniNet {
 
         let pred_score_tensor = &xs[0]; // Global anomaly score
         let anomaly_map_tensor = &xs[1]; // Spatial heatmap
-        //
-        println!("{:?}", anomaly_map_tensor);
 
         for (i, map_2d) in anomaly_map_tensor.axis_iter(Axis(0)).enumerate() {
             let (height, width) = (map_2d.shape()[0], map_2d.shape()[1]);
