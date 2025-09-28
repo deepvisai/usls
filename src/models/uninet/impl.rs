@@ -1,7 +1,7 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
 use crate::{elapsed_module, Config, Engine, Heatmap, Image, Processor, Xs, Y};
 use anyhow::Result;
-use image::{GrayImage};
+use image::GrayImage;
 use log::debug;
 use ndarray::Axis;
 
@@ -77,9 +77,10 @@ impl UniNet {
 
             // Get score for this batch item
             let global_score = if pred_score_tensor.ndim() == 1 {
-                pred_score_tensor[[i]]
+                pred_score_tensor[[i.min(pred_score_tensor.len() - 1)]]
             } else {
-                pred_score_tensor[[i, 0]]
+                let batch_idx = i.min(pred_score_tensor.shape()[0] - 1);
+                pred_score_tensor[[batch_idx, 0]]
             }
             .clamp(0.0, 1.0);
 
