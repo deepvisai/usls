@@ -5,7 +5,7 @@ impl crate::Config {
             .with_model_ixx(0, 1, 3.into())
             .with_model_ixx(0, 2, 384.into())
             .with_model_ixx(0, 3, 384.into())
-            .with_resize_mode(crate::ResizeMode::FitAdaptive)
+            .with_resize_mode(crate::ResizeMode::FitExact)
             .with_resize_filter("CatmullRom")
             .with_normalize(true)
             .with_image_mean(&[0.485, 0.456, 0.406])
