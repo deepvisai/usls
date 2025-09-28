@@ -1,7 +1,7 @@
 //! Implementation of the GLASS model: preprocessing, inference, postprocessing.
 use crate::{elapsed_module, Config, Engine, Heatmap, Image, Processor, Xs, Y};
 use anyhow::Result;
-use image::GrayImage;
+use image::{GrayImage};
 use log::debug;
 use ndarray::Axis;
 
@@ -17,8 +17,8 @@ impl UniNet {
         let engine = Engine::try_from_config(&config.model)?;
 
         let (height, width) = (
-            engine.try_height().unwrap_or(&392.into()).opt(),
-            engine.try_width().unwrap_or(&392.into()).opt(),
+            engine.try_height().unwrap_or(&256.into()).opt(),
+            engine.try_width().unwrap_or(&256.into()).opt(),
         );
 
         let processor = Processor::try_from_config(&config.processor)?
@@ -57,13 +57,11 @@ impl UniNet {
         let mut results = Vec::new();
 
         let pred_score_tensor = &xs[0]; // Global anomaly score
-        let anomaly_map_tensor = &xs[2]; // Spatial heatmap
+        let anomaly_map_tensor = &xs[1]; // Spatial heatmap
+        //
+        println!("{:?}", anomaly_map_tensor);
 
-        for (i, batch_out) in anomaly_map_tensor.axis_iter(Axis(0)).enumerate() {
-            // batch_out is now [1, 392, 392] for each batch item
-            // Skip the channel dimension and get to [392, 392]
-            let map_2d = batch_out.index_axis(Axis(0), 0);
-
+        for (i, map_2d) in anomaly_map_tensor.axis_iter(Axis(0)).enumerate() {
             let (height, width) = (map_2d.shape()[0], map_2d.shape()[1]);
 
             // Flatten and convert to pixels
@@ -77,10 +75,9 @@ impl UniNet {
 
             // Get score for this batch item
             let global_score = if pred_score_tensor.ndim() == 1 {
-                pred_score_tensor[[i.min(pred_score_tensor.len() - 1)]]
+                pred_score_tensor[[i]]
             } else {
-                let batch_idx = i.min(pred_score_tensor.shape()[0] - 1);
-                pred_score_tensor[[batch_idx, 0]]
+                pred_score_tensor[[i, 0]]
             }
             .clamp(0.0, 1.0);
 
