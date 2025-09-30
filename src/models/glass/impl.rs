@@ -71,7 +71,7 @@ impl GLASS {
 
                     // Zero out pixels within the edge ignore zone
                     if (x as u32) < self.edge_ignore_pixels || (x as u32) >= (w as u32 - self.edge_ignore_pixels) {
-                        pixel_value = 255;
+                        pixel_value = 0;
                     }
 
                     small.put_pixel(x as u32, y as u32, Luma([pixel_value]));
