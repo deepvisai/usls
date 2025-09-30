@@ -61,18 +61,23 @@ impl GLASS {
         for (i, batch_out) in output_tensor.axis_iter(Axis(0)).enumerate() {
 
             let raw_map = batch_out.to_owned().mapv(|v| v.clamp(0.0, 1.0));
-            let max_score = raw_map.iter().copied().fold(0.0, f32::max);
             let (h, w) = (raw_map.shape()[0], raw_map.shape()[1]);
 
             let mut small = GrayImage::new(w as u32, h as u32);
+            let mut max_score = 0.0f32;
             for (y, row) in raw_map.outer_iter().enumerate() {
                 for (x, &v) in row.iter().enumerate() {
                     let mut pixel_value = (v * 255.0) as u8;
+                    let mut effective_value = v;
 
                     // Zero out pixels within the edge ignore zone
                     if (x as u32) < self.edge_ignore_pixels || (x as u32) >= (w as u32 - self.edge_ignore_pixels) {
                         pixel_value = 0;
+                        effective_value = 0.0;
                     }
+
+                    // Update max score with the effective value (after edge ignore)
+                    max_score = max_score.max(effective_value);
 
                     small.put_pixel(x as u32, y as u32, Luma([pixel_value]));
 
