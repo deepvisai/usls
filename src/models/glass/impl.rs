@@ -10,6 +10,7 @@ use ndarray::Axis;
 pub struct GLASS {
     engine: Engine,
     processor: Processor,
+    edge_ignore_pixels: u32,
 }
 
 impl GLASS {
@@ -25,7 +26,16 @@ impl GLASS {
             .with_image_width(width as _)
             .with_image_height(height as _);
 
-        Ok(Self { engine, processor })
+        Ok(Self {
+            engine,
+            processor,
+            edge_ignore_pixels: 0,
+        })
+    }
+
+    pub fn with_edge_ignore_pixels(mut self, pixels: u32) -> Self {
+        self.edge_ignore_pixels = pixels;
+        self
     }
 
     fn preprocess(&mut self, xs: &[Image]) -> Result<Xs> {
@@ -57,7 +67,13 @@ impl GLASS {
             let mut small = GrayImage::new(w as u32, h as u32);
             for (y, row) in raw_map.outer_iter().enumerate() {
                 for (x, &v) in row.iter().enumerate() {
-                    let pixel_value = (v * 255.0) as u8;
+                    let mut pixel_value = (v * 255.0) as u8;
+
+                    // Zero out pixels within the edge ignore zone
+                    if (x as u32) < self.edge_ignore_pixels || (x as u32) >= (w as u32 - self.edge_ignore_pixels) {
+                        pixel_value = 255;
+                    }
+
                     small.put_pixel(x as u32, y as u32, Luma([pixel_value]));
 
                     if x == 0 && y < 3 {
